@@ -3,7 +3,7 @@ from pysat.solvers import Solver
 
 # Define the rectangles and the strip
 rectangles = [(1, 2), (1, 2), (2, 1), (1, 1)]  # (width, height)
-strip = (4, 4)  # (width, height)
+strip = (4, 2)  # (width, height)
 
 # Initialize the CNF formula
 cnf = CNF()
@@ -20,7 +20,7 @@ for i in range(len(rectangles)):
     for j in range(len(rectangles)):
         variables[f"lr{i+1},{j+1}"] = counter  # lri,rj
         counter += 1
-        variables[f"ur{i+1},{j+1}"] = counter  # uri,rj
+        variables[f"ud{i+1},{j+1}"] = counter  # uri,rj
         counter += 1
     for e in positive_range(strip[0] - rectangles[i][0] + 2):
         variables[f"px{i+1},{e}"] = counter  # pxi,e
@@ -42,7 +42,7 @@ for i in range(len(rectangles)):
 # Add the 4-literal axiom clauses
 for i in range(len(rectangles)):
     for j in range(i+1, len(rectangles)):
-        cnf.append([variables[f"lr{i+1},{j+1}"], variables[f"lr{j+1},{i+1}"], variables[f"ur{i+1},{j+1}"], variables[f"ur{j+1},{i+1}"]])
+        cnf.append([variables[f"lr{i+1},{j+1}"], variables[f"lr{j+1},{i+1}"], variables[f"ud{i+1},{j+1}"], variables[f"ud{j+1},{i+1}"]])
 
 # Add the 3-literal non-overlapping constraints
 for i in range(len(rectangles)):
@@ -59,24 +59,55 @@ for i in range(len(rectangles)):
         for f in positive_range(strip[1] - rectangles[i][1]):
             # ur(i,j) => !py(j,hi-1)
             # ur(i,j) => py(i,strp[1]-hi-hj)
-            cnf.append([-variables[f"ur{i+1},{j+1}"], -variables.get(f"py{j+1},{rectangles[i][1]-1}", 0)])
-            cnf.append([-variables[f"ur{i+1},{j+1}"], variables[f"py{i+1},{strip[1]-rectangles[i][1]-rectangles[j][1]}"]])
+            cnf.append([-variables[f"ud{i+1},{j+1}"], -variables.get(f"py{j+1},{rectangles[i][1]-1}", 0)])
+            cnf.append([-variables[f"ud{i+1},{j+1}"], variables[f"py{i+1},{strip[1]-rectangles[i][1]-rectangles[j][1]}"]])
                        
-            cnf.append([-variables[f"ur{i+1},{j+1}"], variables[f"py{i+1},{f}"], -variables.get(f"py{j+1},{f+rectangles[i][1]}", 0)])
-            cnf.append([-variables[f"ur{j+1},{i+1}"], variables.get(f"py{j+1},{f}", 0), -variables.get(f"py{i+1},{f+rectangles[j][1]}", 0)])
-# Domain of px and py: px1,0 = F, px1,1 = T, px2,0 = T, px3,1 = F, px3,2 = T, px4,1 = F, px4,2 = T, py1,0 = T, py2,0 = T, py3,0 = F, py3,1 = T, py4,0 = T
-cnf.append([-variables["px1,0"]])
-cnf.append([variables["px1,1"]])
-cnf.append([variables["px2,0"]])
-cnf.append([-variables["px3,1"]])
-cnf.append([variables["px3,2"]])
-cnf.append([-variables["px4,1"]])
-cnf.append([variables["px4,2"]])
-cnf.append([variables["py1,0"]])
-cnf.append([variables["py2,0"]])
-cnf.append([-variables["py3,0"]])
-cnf.append([variables["py3,1"]])
-cnf.append([variables["py4,0"]])
+            cnf.append([-variables[f"ud{i+1},{j+1}"], variables[f"py{i+1},{f}"], -variables.get(f"py{j+1},{f+rectangles[i][1]}", 0)])
+            cnf.append([-variables[f"ud{j+1},{i+1}"], variables.get(f"py{j+1},{f}", 0), -variables.get(f"py{i+1},{f+rectangles[j][1]}", 0)])
+
+# Domain encoding for px and py: 0 <= x <= strip[0] and 0 <= y <= strip[1]
+# equal to: px(i, W-wi) ^ !px(i,-1) and py(i, H-hi) ^ !py(i,-1)
+
+for i in range(len(rectangles)):
+    cnf.append([variables[f"px{i+1},{strip[0]-rectangles[i][0]}"]])  # px(i, W-wi)
+    cnf.append([variables[f"py{i+1},{strip[1]-rectangles[i][1]}"]])  # py(i, H-hi)
+
+for i in range(len(rectangles)):
+    for j in range(i+1, len(rectangles)):
+        # if indomain(len(px[j]) - 1, width_rects[i] - 1)
+        if strip[0] - rectangles[i][0] + 1 >= rectangles[j][0] - 1:
+            cnf.append([-variables[f"lr{i+1},{j+1}"], -variables[f"px{j+1},{rectangles[i][0]-1}"]])
+        else:
+            cnf.append([-variables[f"lr{i+1},{j+1}"], variables[f"px{j+1},{strip[0] - rectangles[i][0] + 1}"]])
+        # if indomain(len(px[i] - 1, width_rects[j] - 1)
+        if strip[0] - rectangles[j][0] + 1 >= rectangles[i][0] - 1:
+            cnf.append([-variables[f"lr{j+1},{i+1}"], -variables[f"px{i+1},{rectangles[j][0]-1}"]])
+        else:
+            cnf.append([-variables[f"lr{j+1},{i+1}"], variables[f"px{i+1},{strip[0] - rectangles[j][0] + 1}"]])
+        # if indomain(len(py[j]) - 1, height_rects[i] - 1)
+        if strip[1] - rectangles[i][1] + 1 >= rectangles[j][1] - 1:
+            cnf.append([-variables[f"ud{i+1},{j+1}"], -variables[f"py{j+1},{rectangles[i][1]-1}"]])
+        else:
+            cnf.append([-variables[f"ud{i+1},{j+1}"], variables[f"py{j+1},{strip[1] - rectangles[i][1] + 1}"]])
+        # if indomain(len(py[i]) - 1, height_rects[j] - 1)
+        if strip[1] - rectangles[j][1] + 1 >= rectangles[i][1] - 1:
+            cnf.append([-variables[f"ud{j+1},{i+1}"], -variables[f"py{i+1},{rectangles[j][1]-1}"]])
+        else:
+            cnf.append([-variables[f"ud{j+1},{i+1}"], variables[f"py{i+1},{strip[1] - rectangles[j][1] + 1}"]])
+
+# cnf.append([-variables["px1,0"]])
+# cnf.append([variables["px1,1"]])
+# cnf.append([variables["px2,0"]])
+# cnf.append([-variables["px3,1"]])
+# cnf.append([variables["px3,2"]])
+# cnf.append([-variables["px4,1"]])
+# cnf.append([variables["px4,2"]])
+# cnf.append([variables["py1,0"]])
+# cnf.append([variables["py2,0"]])
+# cnf.append([-variables["py3,0"]])
+# cnf.append([variables["py3,1"]])
+# cnf.append([variables["py4,0"]])
+# cnf.append([-variables[f"ud{1},{2}"]])
 
 # print cnf clauses
 print(cnf)
